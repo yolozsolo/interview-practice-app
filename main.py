@@ -1,5 +1,5 @@
 def main():
-    print("Hello from inverview-practice!")
+    print("Hello from data-engineering-pracitce!")
 
 
 if __name__ == "__main__":

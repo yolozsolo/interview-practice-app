@@ -1,6 +1,6 @@
-# Interview Practice
+# Data Engineering Pracitce
 
-This repo contains single-file technical interview practice challenges.
+This repo contains single-file technical data engineering practice challenges.
 
 The workflow is intentionally simple:
 

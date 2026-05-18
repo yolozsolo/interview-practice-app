@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This repository is a lightweight Python interview-practice workspace, not a full application. Keep the workflow centered on single-file challenges.
+This repository is the lightweight Python `data-engineering-pracitce` workspace, not a full application. Keep the workflow centered on single-file challenges.
 
 - `main.py` contains the minimal project entry point.
 - `challenges/` stores single-file challenge files and related notes.

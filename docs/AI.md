@@ -6,9 +6,9 @@ workflow, conventions, or active practice material change.
 
 ## Project Purpose
 
-This repository is a lightweight Python interview-practice workspace. It is not
-a full application. The main goal is to practice senior / lead data engineering
-interview tasks through single-file challenges.
+This repository is the lightweight Python `data-engineering-pracitce` workspace.
+It is not a full application. The main goal is to practice senior / lead data
+engineering interview tasks through single-file challenges.
 
 The preferred workflow is:
 

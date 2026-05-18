@@ -163,14 +163,19 @@ def parse_utc_timestamp(value: str) -> datetime:
     """
     s_value = value.strip()
     if not s_value or s_value[-1] != 'Z':
-        raise ValueError("invalid timestamp")
-    return datetime.fromisoformat(s_value)
+        raise ValueError("invalid_timestamp")
+    
+    try:
+        result = datetime.fromisoformat(s_value)
+    except ValueError | TypeError:
+        raise ValueError("invalid_timestamp")
+
+    return result
 
 
 def normalize_event(raw: dict[str, Any]) -> EventRow:
     """Normalize one raw event.
 
-    TODO:
     - Validate required fields: event_id, user_id, event_type, event_time,
       ingest_time.
     - Strip event_id, user_id, event_type, event_time, ingest_time, page_url.
@@ -190,29 +195,33 @@ def normalize_event(raw: dict[str, Any]) -> EventRow:
     #Validate missing values
     for k,v in raw.items():
         if k in required_fields:
-            if not str(v).strip():
+            if not str(v).strip() or v == None:
                 raise ValueError(f"missing_{k}")
-    
+            
+    clean_event_id = str(raw.get("event_id")).strip()
+    clean_user_id = str(raw.get("user_id")).strip()
+    clean_event_type = str(raw.get("event_type")).strip().lower()
     clean_event_time = str(raw.get("event_time")).strip()
+    clean_ingest_time = str(raw.get("ingest_time")).strip()
+    clean_page_url = str(raw.get("page_url")).strip()
+
     try:
         parse_utc_timestamp(clean_event_time)
     except ValueError:
         raise ValueError("invalid_event_time")
     
-    clean_ingest_time = str(raw.get("ingest_time")).strip()
     try:
         parse_utc_timestamp(clean_ingest_time)
     except ValueError:
         raise ValueError("invalid_ingest_time")
     
-    clean_page_url = str(raw.get("page_url")).strip()
-    if not str(clean_page_url).strip():
+    if not clean_page_url:
         clean_page_url = None
         
     return EventRow(
-        event_id=str(raw.get("event_id")).strip(),
-        user_id=str(raw.get("user_id")).strip(),
-        event_type=str(raw.get("event_type")).strip().lower(),
+        event_id=clean_event_id,
+        user_id=clean_user_id,
+        event_type=clean_event_type,
         event_time=clean_event_time,
         ingest_time=clean_ingest_time,
         page_url=clean_page_url
@@ -222,7 +231,6 @@ def normalize_event(raw: dict[str, Any]) -> EventRow:
 def normalize_batch(raw_rows: list[dict[str, Any]]) -> tuple[list[EventRow], list[RejectedRow]]:
     """Normalize all rows and collect rejections.
 
-    TODO:
     - Return valid normalized rows and rejected rows.
     - Do not stop after the first invalid row.
     - Preserve the original invalid row in each RejectedRow.
@@ -233,7 +241,7 @@ def normalize_batch(raw_rows: list[dict[str, Any]]) -> tuple[list[EventRow], lis
     for row in raw_rows:
         try:
             event_rows.append(normalize_event(row))
-        except Exception as e:
+        except ValueError as e:
             rejected_rows.append(RejectedRow(
                 row=row,
                 reason=str(e)
@@ -244,14 +252,13 @@ def normalize_batch(raw_rows: list[dict[str, Any]]) -> tuple[list[EventRow], lis
 def deduplicate_events(rows: list[EventRow]) -> list[EventRow]:
     """Deduplicate by event_id.
 
-    TODO:
     - For duplicate event_id values, keep the row with the newest ingest_time.
     - If ingest_time ties, keep the later row in the input list.
     - Return rows sorted deterministically by user_id, event_time, ingest_time,
       and event_id.
     """
 
-    dedup: dict[str: EventRow] = {}
+    dedup: dict[str, EventRow] = {}
 
     for row in rows:
         event_id = row["event_id"]
@@ -263,7 +270,7 @@ def deduplicate_events(rows: list[EventRow]) -> list[EventRow]:
         if parse_utc_timestamp(row["ingest_time"]) >= parse_utc_timestamp(dedup[event_id]["ingest_time"]):
             dedup[event_id] = row
 
-    list_dedup = [dedup[event_id] for event_id in dedup.keys()]
+    list_dedup = [dedup[event_id] for event_id in dedup]
     return sorted(list_dedup, key= lambda r: (r["user_id"], r["event_time"], r["ingest_time"], r["event_id"]))
 
 
@@ -294,11 +301,18 @@ def build_sessions(rows: list[EventRow], timeout_minutes: int = 30) -> list[Sess
         user_id=row["user_id"]
         rows_by_id.setdefault(user_id, []).append(row)
 
-    #create session counter
-
-    #initialize sessions
-    session_events: dict[str, list[EventRow]] = {}
-
+    def save_session(session_id: str, events: list[EventRow]) -> SessionRow:
+            return {
+                "session_id": session_id,
+                "user_id": events[0]["user_id"],
+                "started_at": events[0]["event_time"],
+                "ended_at": events[-1]["event_time"],
+                "event_count": len(events),
+                "page_view_count": len([event for event in events if event["event_type"] == "page_view"]),
+                "event_ids": [user_event["event_id"] for user_event in events],
+            }
+    
+    sessions: list[SessionRow] = []
     #create sessions
     for user_id, events in rows_by_id.items():
         session_counter = 1
@@ -315,27 +329,13 @@ def build_sessions(rows: list[EventRow], timeout_minutes: int = 30) -> list[Sess
             gap = current_time - previous_time
 
             if gap > timedelta(minutes=timeout_minutes):
-                session_events[session_id] = events[session_start_index:i] #save
+                sessions.append(save_session(sessiond_id=session_id, events=events[session_start_index:i])) #save
                 session_counter += 1
                 session_id = f"{user_id}_s{session_counter}" #create new id
                 session_start_index = i
                 
-
         #save remaining sessions
-        session_events[session_id] = events[session_start_index:]
-
-    #flat into session list
-    sessions: list[SessionRow] = []
-    for session_id, events in session_events.items():
-        sessions.append({
-            "session_id": session_id,
-            "user_id": events[0]["user_id"],
-            "started_at": events[0]["event_time"],
-            "ended_at": events[-1]["event_time"],
-            "event_count": len(events),
-            "page_view_count": len([event for event in events if event["event_type"] == "page_view"]),
-            "event_ids": [user_event["event_id"] for user_event in events],
-        })
+        sessions.append(save_session(sessiond_id=session_id, events=events[session_start_index:]))
 
     return sorted(sessions, key=lambda s: (s["user_id"], s["session_id"]))
 
@@ -368,21 +368,43 @@ Answer these after your implementation:
 1. Spark implementation:
    How would you implement the session assignment using Spark DataFrame APIs or
    SQL window functions?
+   - For plain SQL I would use PARTITION BY with oe of the built in functionalities like RANK() or ROW_NUMBER()
+   - For DataFrame API there `Window` class for using. which has `partition_by` and `order_by`. Then in `.withColumn` I can use the specific
+   windowing function I want to use, like `row_number(), rank(), lead() etc.` with `over()`.
 
 2. Shuffle and skew:
    Which operations in this pipeline cause shuffles, and how would you detect
    and mitigate skewed users with very large event volumes?
+   - In this pipe, build_session() would definitely cause shuffle. I am not sure about deduplication process
+   - Shuffles are done when data is groupBy-ed, joined, orderBy-ed or repartitioned. The reason when moving data across partitions to one partition,
+   so all records with the same key are at the same place. 
+   - I would detect by checking task time, logs, processing time, maybe partition metrics.
+   -  For mitigation I would revise key usage/implementation. I would what are the high-frequency calls and partition accordingly
 
 3. Streaming and late data:
    If this became a Structured Streaming job, how would you use watermarks and
    output mode? What data would be dropped or updated?
+   - the session timeout
+  defines when a new session starts, while the watermark controls how long state
+  is retained for late events.
+   - I would use the `.withWatermark()` function then using the `.window()` function to declare the smaller intervals if necessary.
+   - In this case I would only use `.withWatermark()` with the `timeout_minutes`
+   - There are 3 output modes:
+     - Append - Will write to the output table after the watermark threshold passes. Old aggregation state is dropped after threshold. This always appends to the end of the table
+     - Update - As results are calculated writing happens in the target table. Can update and overwrite existing data. This will keep the table and update existing data one by one
+     - Complete - Aggregation state isn't dropped. Rewrites the target table at each trigger. THis will rewrite the whole table each time, like droppig and inserting.
+   - In this example I would probably use the Append output. The reason is the key is mainly the user_id and we want to see how the usage overtime continously.
 
 4. Retry safety:
    How would you make the final session output idempotent if the same source
    files or micro-batches are retried?
+   - I think it is already idempotent.
+   - Idempotency needs stable keys and deterministic overwrite/merge behavior in
+  the target output.
 
 5. Observability:
    What metrics and data-quality checks would you emit for this pipeline?
+   -  I would emit success rows, failed rows. Number of sessions created, number of duplicates deleted. And others?
 """
 
 
