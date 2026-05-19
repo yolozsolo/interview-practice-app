@@ -92,11 +92,24 @@ Recent challenge topics include:
 
 - Delta-style retry-safe customer profile ingestion.
 - Clickstream sessionization with late-event and Spark reasoning.
+- C-level online retail order reconciliation using a compact UCI Online Retail
+  inspired extract.
+- Inventory snapshot reconciliation with retry-safe updates, tombstones, stale
+  version handling, and production observability.
+
+Recent grading context:
+
+- `challenges/2026-05-18_inventory_snapshot_reconciliation.py` was graded at
+  72 / 100 when grading only the implementation and written answers. The
+  implementation passes runtime, pytest, and ruff checks but mypy fails.
+  Idempotency and data-quality answers have useful signal; Spark/Delta and
+  backfill answers remain below senior target.
 
 These challenges are intended to practice data normalization, validation,
 deduplication, deterministic ordering, retry safety, idempotency, Spark
-performance reasoning, streaming concepts, observability, and written
-communication.
+performance reasoning, streaming concepts, order/revenue reconciliation,
+customer-month aggregation, inventory state reconciliation, observability, and
+written communication.
 
 ## Maintenance Rule
 
