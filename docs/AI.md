@@ -96,6 +96,11 @@ Recent challenge topics include:
   inspired extract.
 - Inventory snapshot reconciliation with retry-safe updates, tombstones, stale
   version handling, and production observability.
+- B-level FastAPI inventory event ingestion API with idempotent retries,
+  source-version guards, rejected events, metrics, and TestClient checks.
+- Senior / lead traceability domain modeling with source-record identity,
+  business-entity resolution, lineage edges, audit events, compliance risk
+  propagation, conflict detection, and explainability.
 
 Recent grading context:
 
@@ -109,7 +114,9 @@ These challenges are intended to practice data normalization, validation,
 deduplication, deterministic ordering, retry safety, idempotency, Spark
 performance reasoning, streaming concepts, order/revenue reconciliation,
 customer-month aggregation, inventory state reconciliation, observability, and
-written communication.
+written communication. The workspace now also includes FastAPI/Pydantic API
+practice for data-engineering ingestion workflows and traceability-platform
+modeling practice for auditability and sustainability contexts.
 
 ## Maintenance Rule
 
