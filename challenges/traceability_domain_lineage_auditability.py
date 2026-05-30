@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal, TypedDict, get_args
 from datetime import datetime
+from collections import deque
+
 
 """
 Title: Traceability Domain Model, Lineage, and Auditability
@@ -472,20 +474,26 @@ def normalize_literal(value: object, allowed_values: set[str], field_name:str) -
     
 def normalize_parents(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
-        raise ValueError("invalide_parent")
+        raise ValueError("invalie_parent")
     
     result: list[str] = []
 
     for item in value:
         if not isinstance(item, dict):
-            raise ValueError("invalide_parent")
+            raise ValueError("invalid_parent")
         
-        for key, n_value in item.items():
-            if key:
-                normalize_required_string(n_value, key)
-                entity_id = make_entity_id(key, n_value)
+        if "entity_type" not in item.keys():
+            raise ValueError("invalid_parent")
+        
+        if "business_id" not in item.keys():
+            raise ValueError("invalid_parent")
 
-        result.append(entity_id)
+        entity_type = normalize_required_string(item["entity_type"], "entity_type")
+        business_id = normalize_required_string(item["business_id"], "business_id")
+
+        parent_id = f"{entity_type}:{business_id}"
+
+        result.append(parent_id.strip().upper())
 
     return tuple(result)
 
@@ -604,7 +612,6 @@ def normalize_source_records(
     - normalized records that are safe for graph/entity processing
     - rejected records with source_record_id and reason
 
-    TODO:
     - Validate critical fields: source_system, source_record_id,
       source_version, ingest_ts, event_ts, entity_type, business_id,
       attributes, and parents.
@@ -657,7 +664,6 @@ def resolve_business_entities(
 ) -> BusinessEntities:
     """Resolve normalized source records into business entities.
 
-    TODO:
     - Group records by entity_id.
     - Preserve a list of contributing source_record_ids per entity.
     - Merge non-conflicting attributes.
@@ -719,18 +725,56 @@ def build_traceability_graph(
     - downstream_graph: parent_entity_id -> child_entity_ids
     - edges: detailed edge records with source attribution
 
-    TODO:
     - Use parent_entity_ids from normalized records.
     - Make graph traversal deterministic by storing sorted sets or sorting at
       traversal time.
     - Deduplicate repeated edges caused by duplicate/corrected source records.
     """
-    raise NotImplementedError
+    edges: list[LineageEdge] =[]
+    singles: dict[str, NormalizedRecord] = {}
 
+    for record in records:
+        if not record.parent_entity_ids:
+            singles[record.entity_id] = record
+        for parent in record.parent_entity_ids:
+            edges.append(LineageEdge(
+                child_entity_id=record.entity_id,
+                parent_entity_id=parent,
+                source_record_id=record.source_record_id,
+                confidence=float("1.0"), # some business logic can be applicable here
+                reason="has_parent_id" # based om the logic for confidence reason can be applied
+            ))
+
+    dedup_edges = {(edge.child_entity_id, edge.parent_entity_id, edge.source_record_id): edge for edge in edges}
+
+    upstream_graph: Graph = {}
+    downstream_graph: Graph = {}
+    for edge in dedup_edges.values():
+        child_key = edge.child_entity_id
+        parent_key = edge.parent_entity_id
+
+        if child_key not in upstream_graph:
+            upstream_graph.setdefault(child_key,set()).add(parent_key)
+        else:
+            upstream_graph[child_key].add(parent_key)
+
+        if parent_key not in downstream_graph:
+            downstream_graph.setdefault(parent_key,set()).add(child_key)
+        else:
+            downstream_graph[parent_key].add(child_key)
+
+    for single in singles:
+        downstream_graph.setdefault(single, set())
+        upstream_graph.setdefault(single, set())
+
+    return (
+        upstream_graph,
+        downstream_graph,
+        sorted(dedup_edges.values(), key=lambda e: (e.source_record_id, e.child_entity_id, e.parent_entity_id))
+    )
 
 def detect_conflicts(records: list[NormalizedRecord]) -> list[Conflict]:
     """Detect conflicting attributes for the same business entity.
-    TODO:
     - Compare attributes reported by different source systems for the same
       entity_id.
     - Report conflicts where multiple non-null values exist for a key.
@@ -814,25 +858,44 @@ def detect_conflicts(records: list[NormalizedRecord]) -> list[Conflict]:
 
     return sorted(conflicts, key=lambda c: (c.entity_id, c.attribute))
 
+def bfs_traverse_graph(graph: Graph, start: str) -> set[str]:
+    visited = {start}
+    queue = deque([start])
+
+    while queue:
+        node = queue.popleft()
+        for neighbor in graph.get(node, set()):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(neighbor)
+    
+    return visited
+
 
 def get_upstream_lineage(entity_id: str, upstream_graph: Graph) -> list[str]:
     """Return all upstream contributors for entity_id in deterministic order."""
-    # TODO:
     # - Traverse recursively or iteratively.
     # - Avoid infinite loops if bad data creates a cycle.
     # - Exclude entity_id itself from the result.
     # - Return a sorted list for deterministic audit/report output.
-    raise NotImplementedError
+
+    lineage_set = bfs_traverse_graph(upstream_graph, entity_id)
+    lineage_set.discard(entity_id)
+
+    return sorted(lineage_set)
 
 
 def get_downstream_impact(entity_id: str, downstream_graph: Graph) -> list[str]:
     """Return all downstream entities impacted by entity_id."""
-    # TODO:
     # - Traverse recursively or iteratively.
     # - Avoid infinite loops if bad data creates a cycle.
     # - Exclude entity_id itself from the result.
     # - Return a sorted list for deterministic audit/report output.
-    raise NotImplementedError
+
+    lineage_set = bfs_traverse_graph(downstream_graph, entity_id)
+    lineage_set.discard(entity_id)
+
+    return sorted(lineage_set)
 
 
 def build_audit_trail(
@@ -853,7 +916,25 @@ def build_audit_trail(
     - Include rejected source records when they are relevant to the entity.
     - Sort events deterministically.
     """
-    raise NotImplementedError
+
+    entity_records = [r for r in records if r.entity_id == entity_id]
+    entity_conflicts = [c for c in conflicts if c.entity_id == entity_id]
+    entity_errors = [reason for reason, raw in rejected_records.items() if raw.get("entity_id", "") == entity_id]
+    entity_upstream = get_upstream_lineage(entity_id=entity_id, upstream_graph=upstream_graph)
+    entity_downstream = get_downstream_impact(entity_id=entity_id, downstream_graph=downstream_graph)
+
+    audit_events: list[AuditEvent] = []
+
+    for record in entity_records:
+        audit_events.append(AuditEvent(
+            entity_id = record.entity_id,
+            event_type = "source_attribution",
+            message = "normalized_entity_record",
+            source_record_ids = tuple(record.source_record_id),
+            risk_level = "none"
+        ))
+
+    return sorted(audit_events, key= lambda a: (a.entity_id, a.event_type, a.risk_level))
 
 
 def calculate_traceability_score(
