@@ -23,6 +23,8 @@ The preferred workflow is:
 - `main.py` is a minimal placeholder entry point.
 - `challenges/` contains single-file interview challenges and related notes.
 - `prompts/` contains reusable prompt templates.
+- `.codex/skills/save-progress/SKILL.md` contains the project-only save-progress workflow.
+- `docs/progress.md` contains the restartable daily progress log.
 - `pyproject.toml` and `uv.lock` define the Python environment.
 - `AGENTS.md` contains repository instructions for coding agents.
 - `docs/AI.md` is this project-context handoff file.
@@ -101,6 +103,11 @@ Recent challenge topics include:
 - Senior / lead traceability domain modeling with source-record identity,
   business-entity resolution, lineage edges, audit events, compliance risk
   propagation, conflict detection, and explainability.
+- Senior / lead PySpark + small local Delta Lake traceability practice covering
+  explicit schemas, DataFrame validation, deterministic deduplication, lineage
+  edge construction, downstream compliance-risk propagation, audit summaries,
+  and optional retry-safe Delta MERGE patterns in
+  `challenges/2026-05-30_traceability_lineage_pyspark_delta.py`.
 
 Recent grading context:
 
@@ -115,11 +122,20 @@ deduplication, deterministic ordering, retry safety, idempotency, Spark
 performance reasoning, streaming concepts, order/revenue reconciliation,
 customer-month aggregation, inventory state reconciliation, observability, and
 written communication. The workspace now also includes FastAPI/Pydantic API
-practice for data-engineering ingestion workflows and traceability-platform
-modeling practice for auditability and sustainability contexts.
+practice for data-engineering ingestion workflows, traceability-platform
+modeling practice for auditability and sustainability contexts, and hands-on
+PySpark/Delta traceability practice.
 
 ## Maintenance Rule
 
 When project instructions, workflow, file structure, challenge conventions, or
 active learning context change, update this file in the same change set so a new
 AI assistant can quickly regain the necessary context.
+
+
+## Project-Only Skill: save-progress
+
+This repository has a local skill at `.codex/skills/save-progress/SKILL.md`.
+Use it when the user asks to "save progress", "commit and push", or prepare the work so it can be continued tomorrow.
+
+The skill maintains `docs/progress.md`, then commits and pushes the relevant changes. The progress file should summarize what was done, changed files, verification results, important decisions, and the next TODOs.

@@ -891,7 +891,7 @@ def get_downstream_impact(entity_id: str, downstream_graph: Graph) -> list[str]:
     # - Avoid infinite loops if bad data creates a cycle.
     # - Exclude entity_id itself from the result.
     # - Return a sorted list for deterministic audit/report output.
-
+ 
     lineage_set = bfs_traverse_graph(downstream_graph, entity_id)
     lineage_set.discard(entity_id)
 
@@ -917,22 +917,59 @@ def build_audit_trail(
     - Sort events deterministically.
     """
 
-    entity_records = [r for r in records if r.entity_id == entity_id]
-    entity_conflicts = [c for c in conflicts if c.entity_id == entity_id]
-    entity_errors = [reason for reason, raw in rejected_records.items() if raw.get("entity_id", "") == entity_id]
-    entity_upstream = get_upstream_lineage(entity_id=entity_id, upstream_graph=upstream_graph)
+    entity_upstream = get_upstream_lineage(entity_id, upstream_graph)
+    relevant_entities = {entity_id, *entity_upstream}
+
+    entity_records = [r for r in records if r.entity_id in relevant_entities]
+    entity_conflicts = [c for c in conflicts if c.entity_id in relevant_entities]
+    entity_errors = []
     entity_downstream = get_downstream_impact(entity_id=entity_id, downstream_graph=downstream_graph)
 
     audit_events: list[AuditEvent] = []
 
     for record in entity_records:
+        risk = record.attributes.get("deforestation_risk")
+        if risk in {"review", "high"}:
+            audit_events.append(AuditEvent(
+                entity_id = entity_id,
+                event_type = "compliance_risk",
+                message = "normalized_entity_record",
+                source_record_ids = (record.source_record_id,),
+                risk_level = "high"
+            ))
+        else:
+            audit_events.append(AuditEvent(
+                entity_id = entity_id,
+                event_type = "source_attribution",
+                message = "normalized_entity_record",
+                source_record_ids = (record.source_record_id,),
+                risk_level = "none"
+            ))
+
+    for conflict in entity_conflicts:
         audit_events.append(AuditEvent(
-            entity_id = record.entity_id,
-            event_type = "source_attribution",
-            message = "normalized_entity_record",
-            source_record_ids = tuple(record.source_record_id),
-            risk_level = "none"
+            entity_id = entity_id,
+            event_type = "conflict_detected",
+            message = f"{conflict.severity}_severity_level",
+            source_record_ids=conflict.source_record_ids,
+            risk_level = "review"
         ))
+
+    audit_events.append(AuditEvent(
+        entity_id = entity_id,
+        event_type = "upstream_lineage",
+        message = "->".join(entity_upstream),
+        source_record_ids=(),
+        risk_level = "none"
+    ))
+
+    audit_events.append(AuditEvent(
+        entity_id = entity_id,
+        event_type = "downstream_lineage",
+        message = "<-".join(entity_downstream),
+        source_record_ids=(),
+        risk_level = "none"
+    ))
 
     return sorted(audit_events, key= lambda a: (a.entity_id, a.event_type, a.risk_level))
 
