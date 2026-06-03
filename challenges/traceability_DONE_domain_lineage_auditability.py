@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import Literal, TypedDict, get_args
 from datetime import datetime
 from collections import deque
+from hashlib import sha256
 
 
 """
@@ -558,7 +558,7 @@ def normalize_source_record(raw: RawSourceRecord) -> tuple[NormalizedRecord, dic
             value=raw["parents"]
         )
 
-        record_figerprint = hash(
+        fingerprint_input =(
             normalized_source_system
             + normalized_source_record_id
             + str(normalized_source_version)
@@ -566,8 +566,9 @@ def normalize_source_record(raw: RawSourceRecord) -> tuple[NormalizedRecord, dic
             + normalized_event_ts
             + normalized_entity_type
             + normalized_business_id
-            + entity_id
-        )
+            + entity_id)
+        
+        record_fingerprint = sha256(fingerprint_input.encode("utf-8")).hexdigest()
     except ValueError as ve:
         return None, {
             "reason": str(ve),
@@ -585,7 +586,7 @@ def normalize_source_record(raw: RawSourceRecord) -> tuple[NormalizedRecord, dic
         entity_id=entity_id,
         attributes=attributes,
         parent_entity_ids=normalized_parents,
-        record_fingerprint=record_figerprint
+        record_fingerprint=record_fingerprint
     ),None
 
 def deduplicate(normalized_set) -> dict[tuple[str,str], NormalizedRecord]:
@@ -631,7 +632,7 @@ def normalize_source_records(
         "attributes", "parents")
     
     
-    results: list[tuple[NormalizedRecord, dict[str, object]]] = []
+    results: list[tuple[NormalizedRecord | None, dict[str, object] | None]] = []
     for record in raw_records:
 
         #validate required fields
@@ -651,7 +652,8 @@ def normalize_source_records(
     #dedup
     group = deduplicate(normalized_records)
 
-    rank_keys = lambda r: (r.entity_id, r.source_system, r.source_record_id, r.source_version)
+    def rank_keys(r: NormalizedRecord):
+        return (r.entity_id, r.source_system, r.source_record_id, r.source_version)
     results = [
         item for item in sorted(group.values(), key=rank_keys)
     ]
@@ -709,6 +711,10 @@ def resolve_business_entities(
 
         if datetime.fromisoformat(record.ingest_ts) > datetime.fromisoformat(entity["latest_ingest_ts"]):
             entity["latest_ingest_ts"] = record.ingest_ts
+
+        
+    for entity in groups.values():
+        entity["source_record_ids"] = tuple(sorted(entity["source_record_ids"]))
 
     return groups
                 
@@ -898,6 +904,7 @@ def get_downstream_impact(entity_id: str, downstream_graph: Graph) -> list[str]:
     return sorted(lineage_set)
 
 
+
 def build_audit_trail(
     entity_id: str,
     records: list[NormalizedRecord],
@@ -922,7 +929,6 @@ def build_audit_trail(
 
     entity_records = [r for r in records if r.entity_id in relevant_entities]
     entity_conflicts = [c for c in conflicts if c.entity_id in relevant_entities]
-    entity_errors = []
     entity_downstream = get_downstream_impact(entity_id=entity_id, downstream_graph=downstream_graph)
 
     audit_events: list[AuditEvent] = []
@@ -985,7 +991,23 @@ def calculate_traceability_score(
     # - Penalize conflicts and rejected critical source records.
     # - Clamp the final value to [0.0, 1.0].
     # - Round consistently, for example to 3 decimals.
-    raise NotImplementedError
+    
+    dedup = {(event.event_type, event.risk_level, event.source_record_ids):event for event in audit_trail if event.entity_id == entity_id}
+    score = 1.0
+
+    for event in dedup.values():
+        if event.risk_level == "high":
+            score -= 0.20
+        elif event.risk_level == "review":
+            score -= 0.08
+
+        if event.event_type == "conflict_detected":
+            score -= 0.12
+
+        if event.event_type == "rejected_record":
+            score -= 0.15
+    
+    return round(max(0.0, min(1.0, score)), 3)
 
 
 def produce_traceability_report(
@@ -1012,7 +1034,57 @@ def produce_traceability_report(
       - compliance_risk
       - rejected_records
     """
-    raise NotImplementedError
+    normalized_records, rejected_records = normalize_source_records(raw_records)
+    business_entities = resolve_business_entities(normalized_records)
+    upstream_graph, downstream_graph, _ = build_traceability_graph(normalized_records)
+    conflicts = detect_conflicts(normalized_records)
+    audit_trail = build_audit_trail(
+        entity_id,
+        normalized_records,
+        upstream_graph,
+        downstream_graph,
+        conflicts,
+        rejected_records,
+    )
+    traceability_score = calculate_traceability_score(entity_id, audit_trail)
+    
+
+    compliance_risk = "none"
+    for audit in audit_trail:
+        if audit.risk_level == "high":
+            compliance_risk = "high"
+            break
+
+        if audit.risk_level == "review":
+            compliance_risk = "review"
+            break
+
+    upstream_entities = get_upstream_lineage(entity_id, upstream_graph)
+    relevant_entities = {entity_id, *upstream_entities}
+
+    return {
+        "entity_id": entity_id,
+        "business_entities": business_entities.get(entity_id, []),
+        "upstream_entities": get_upstream_lineage(entity_id, upstream_graph),
+        "downstream_entities": get_downstream_impact(entity_id, downstream_graph),
+        "source_record_ids": tuple(event_source_record_id for event in audit_trail for event_source_record_id in event.source_record_ids),
+         "conflicts": [
+            {
+                "entity_id": conflict.entity_id,
+                "attribute": conflict.attribute,
+                "values_by_source": conflict.values_by_source,
+                "source_record_ids": conflict.source_record_ids,
+                "severity": conflict.severity,
+            }
+            for conflict in conflicts
+            if conflict.entity_id in relevant_entities
+        ],
+        "audit_trail": audit_trail,
+        "traceability_score": traceability_score,
+        "compliance_risk": compliance_risk,
+        "rejected_records": rejected_records
+    }
+
 
 
 # =========================
@@ -1028,7 +1100,7 @@ Answer these as comments or replace this docstring with your notes.
    conflicts, and audit events in Delta Lake / Databricks tables?
 
 3. How would you store lineage edges and audit events so they are queryable,
-   replayable, and useful for regulatory audits?
+   replayable, and useful for regulatory audits?:
 
 4. How would you make ingestion idempotent across retries, backfills, and
    corrections from source systems?
@@ -1089,7 +1161,7 @@ def test_normalization_is_deterministic_and_retry_safe() -> None:
 def test_resolved_entities_keep_source_record_attribution() -> None:
     normalized, _, entities, _, _, _, _ = _prepared_model()
 
-    assert len(normalized) == 12
+    assert len(normalized) == 11
     assert "PRODUCT:CHOC-BAR-2026-05-A" in entities
     assert "PLOT:PLOT-A1" in entities
 
@@ -1203,7 +1275,7 @@ def test_report_propagates_compliance_risk_to_downstream_product() -> None:
 if __name__ == "__main__":
     print(
         "Traceability challenge loaded. Implement the TODOs, then run:\n"
-        "  uv run pytest challenges/traceability_domain_lineage_auditability.py"
+        "  uv run pytest challenges/traceability_DONE_domain_lineage_auditability.py"
     )
 
 

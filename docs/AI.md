@@ -111,6 +111,12 @@ Recent challenge topics include:
 
 Recent grading context:
 
+- `challenges/traceability_DONE_domain_lineage_auditability.py` was graded at
+  82 / 100 for implementation only, excluding written answers. Runtime, pytest,
+  and ruff pass. Mypy still fails due to loose `dict[str, object]` shapes and
+  optional normalize-result typing. The grade report is in
+  `challenges/traceability_domain_lineage_auditability.md` and includes
+  teacher-style written-answer guidance.
 - `challenges/2026-05-18_inventory_snapshot_reconciliation.py` was graded at
   72 / 100 when grading only the implementation and written answers. The
   implementation passes runtime, pytest, and ruff checks but mypy fails.
