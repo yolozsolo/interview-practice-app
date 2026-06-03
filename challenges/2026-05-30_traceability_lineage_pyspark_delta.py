@@ -45,8 +45,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pyspark.sql import DataFrame, SparkSession
+from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import types as T
+from pyspark.sql import functions as F
 
 
 # =========================
@@ -419,21 +420,42 @@ def load_starter_data(spark: SparkSession) -> dict[str, DataFrame]:
 # IMPLEMENTATION AREA
 # =========================
 
+def is_missing(column_name: str) -> Column:
+    return F.col(column_name).isNull() | (F.trim(F.col(column_name)) == "")
 
 def reject_invalid_records(
     records: DataFrame, required_columns: list[str]
 ) -> tuple[DataFrame, DataFrame]:
     """Split a DataFrame into valid rows and rejected rows.
 
-    TODO:
     - Treat null or blank required columns as invalid.
     - Return `(valid_records, rejected_records)`.
     - Include `rejection_reason` on rejected records.
     - Preserve enough original columns for quarantine investigation.
     - Use DataFrame APIs, not collection to Python.
     """
-    raise NotImplementedError
+    df = records
+    
+    reason_columns = [
+        F.when(is_missing(column), F.lit(f"missing_{column}"))
+        for column in required_columns
+    ]
 
+    validated_df = df.withColumn(
+        "rejection_reasons",
+        F.filter(
+            F.array(*reason_columns), 
+            lambda reason: reason.isNotNull()
+        )
+    ).withColumn(
+        "is_valid",
+        F.size(F.col("rejection_reasons")) == 0
+    )
+
+    valid_records = validated_df.filter(F.col("is_valid"))
+    rejected_records = validated_df.filter(~F.col("is_valid"))
+        
+    return (valid_records, rejected_records)
 
 def deduplicate_latest(records: DataFrame, business_keys: list[str]) -> DataFrame:
     """Keep the deterministic latest row per business key.
@@ -723,7 +745,7 @@ def test_invalid_records_are_rejected_with_reasons(spark: SparkSession) -> None:
 
     assert valid.count() == 6
     assert rejected.count() == 1
-    assert "rejection_reason" in rejected.columns
+    assert "rejection_reasons" in rejected.columns
 
 
 def test_deduplication_keeps_latest_deterministic_source_record(

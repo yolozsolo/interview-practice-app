@@ -111,6 +111,12 @@ Recent challenge topics include:
 
 Recent grading context:
 
+- Current checkpoint in `challenges/2026-05-30_traceability_lineage_pyspark_delta.py`:
+  `reject_invalid_records` is the only implemented pipeline function so far.
+  It uses Spark DataFrame expressions, an `is_missing` helper, and array
+  filtering to produce `rejection_reasons` without fake sentinel strings. The
+  focused pytest for invalid-record rejection and Ruff both pass. The next
+  function to implement is `deduplicate_latest`.
 - `challenges/traceability_DONE_domain_lineage_auditability.py` was graded at
   82 / 100 for implementation only, excluding written answers. Runtime, pytest,
   and ruff pass. Mypy still fails due to loose `dict[str, object]` shapes and

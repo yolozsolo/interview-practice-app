@@ -2,6 +2,39 @@
 
 Newest entries go first. This file exists so the next work session can start quickly without reconstructing context from memory or chat history.
 
+## 2026-06-03 — Start PySpark validation implementation
+
+### Done
+
+- Discussed the development lifecycle for `challenges/2026-05-30_traceability_lineage_pyspark_delta.py` without solving the challenge end to end.
+- Debugged `reject_invalid_records` step by step, especially Spark column methods, `withColumn` argument expectations, and null handling inside arrays.
+- Implemented the first validation helper and `reject_invalid_records` using DataFrame expressions and array filtering for rejection reasons.
+- Removed an unused import after Ruff surfaced it.
+
+### Changed files
+
+- `challenges/2026-05-30_traceability_lineage_pyspark_delta.py` — added `is_missing`, implemented `reject_invalid_records`, imported Spark functions/Column, and adjusted the first test to expect `rejection_reasons`.
+- `docs/AI.md` — updated active context for the current PySpark/Delta traceability challenge checkpoint.
+- `docs/progress.md` — added this handoff entry.
+
+### Verification
+
+- PASS — `uv run pytest challenges/2026-05-30_traceability_lineage_pyspark_delta.py::test_invalid_records_are_rejected_with_reasons`
+- PASS — `uv run ruff check challenges/2026-05-30_traceability_lineage_pyspark_delta.py`
+- NOT RUN — full challenge pytest, because later functions are still intentional TODOs.
+
+### Decisions / Notes
+
+- Use real nulls from `F.when(...)` and Spark array filtering instead of a fake `"None"` sentinel for rejection reasons.
+- Keep the work incremental and educational: one function and one narrow test at a time.
+- The challenge remains in progress; only the first validation test is expected to pass right now.
+
+### Next
+
+- [ ] Implement `deduplicate_latest` with deterministic window ordering.
+- [ ] Run the deduplication-specific pytest after that function is implemented.
+- [ ] Continue normalization functions in dependency order: origins, batch events, shipments, declarations.
+
 ## 2026-06-03 — Finish and grade pure-Python traceability challenge
 
 ### Done
