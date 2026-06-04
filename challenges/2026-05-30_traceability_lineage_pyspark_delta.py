@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pyspark.sql import Column, DataFrame, SparkSession
+from pyspark.sql import Column, DataFrame, SparkSession, Window
 from pyspark.sql import types as T
 from pyspark.sql import functions as F
 
@@ -467,8 +467,19 @@ def deduplicate_latest(records: DataFrame, business_keys: list[str]) -> DataFram
       deterministic tie-breaker.
     - Drop exact duplicate source rows before ranking if useful.
     """
-    raise NotImplementedError
+    df = records
 
+    filtered = df.withColumn(
+        "rn",
+        F.row_number().over(
+            Window.partitionBy(business_keys)
+            .orderBy([
+                F.col("source_version").desc(),
+                F.col("ingest_ts").desc()
+            ])
+        )
+    ).filter(F.col("rn") == 1)
+    return filtered
 
 def normalize_origins(raw_origins: DataFrame) -> DataFrame:
     """Normalize origin records into silver-ready origin entities.

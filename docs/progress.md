@@ -2,6 +2,38 @@
 
 Newest entries go first. This file exists so the next work session can start quickly without reconstructing context from memory or chat history.
 
+## 2026-06-04 — Continue PySpark deduplication implementation
+
+### Done
+
+- Started `deduplicate_latest` in `challenges/2026-05-30_traceability_lineage_pyspark_delta.py`.
+- Added Spark `Window` usage and `row_number` ranking by business key.
+- Verified that the rejection and deduplication focused tests pass.
+- Removed a temporary debug `show()` before saving.
+
+### Changed files
+
+- `challenges/2026-05-30_traceability_lineage_pyspark_delta.py` — added initial window-based `deduplicate_latest` implementation.
+- `docs/AI.md` — updated the active PySpark/Delta checkpoint.
+- `docs/progress.md` — added this handoff entry.
+
+### Verification
+
+- PASS — `uv run pytest challenges/2026-05-30_traceability_lineage_pyspark_delta.py::test_invalid_records_are_rejected_with_reasons challenges/2026-05-30_traceability_lineage_pyspark_delta.py::test_deduplication_keeps_latest_deterministic_source_record`
+- PASS — `uv run ruff check challenges/2026-05-30_traceability_lineage_pyspark_delta.py`
+- NOT RUN — full challenge pytest, because later functions are still intentional TODOs.
+
+### Decisions / Notes
+
+- Current deduplication passes the focused test, but it is still an initial implementation.
+- Review whether to add a deterministic tie-breaker and drop the helper `rn` column before relying on this function downstream.
+
+### Next
+
+- [ ] Refine `deduplicate_latest` with a deterministic tie-breaker and remove helper columns from its public output.
+- [ ] Implement `normalize_origins` next, using `reject_invalid_records` and `deduplicate_latest`.
+- [ ] Run origin-normalization-dependent tests after that implementation.
+
 ## 2026-06-03 — Start PySpark validation implementation
 
 ### Done
