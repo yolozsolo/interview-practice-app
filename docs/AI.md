@@ -23,10 +23,10 @@ The preferred workflow is:
 - `main.py` is a minimal placeholder entry point.
 - `challenges/` contains single-file interview challenges and related notes.
 - `prompts/` contains reusable prompt templates.
-- `.codex/skills/save-progress/SKILL.md` contains the project-only save-progress workflow.
+- `.claude/commands/save-progress.md` contains the project-only save-progress workflow.
 - `docs/progress.md` contains the restartable daily progress log.
 - `pyproject.toml` and `uv.lock` define the Python environment.
-- `AGENTS.md` contains repository instructions for coding agents.
+- `CLAUDE.md` contains repository instructions for Claude.
 - `docs/AI.md` is this project-context handoff file.
 
 ## Challenge Conventions
@@ -146,9 +146,9 @@ active learning context change, update this file in the same change set so a new
 AI assistant can quickly regain the necessary context.
 
 
-## Project-Only Skill: save-progress
+## Project-Only Command: save-progress
 
-This repository has a local skill at `.codex/skills/save-progress/SKILL.md`.
+This repository has a local slash command at `.claude/commands/save-progress.md`.
 Use it when the user asks to "save progress", "commit and push", or prepare the work so it can be continued tomorrow.
 
-The skill maintains `docs/progress.md`, then commits and pushes the relevant changes. The progress file should summarize what was done, changed files, verification results, important decisions, and the next TODOs.
+The command maintains `docs/progress.md`, then commits and pushes the relevant changes. The progress file should summarize what was done, changed files, verification results, important decisions, and the next TODOs.

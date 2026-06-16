@@ -2,6 +2,43 @@
 
 Newest entries go first. This file exists so the next work session can start quickly without reconstructing context from memory or chat history.
 
+## 2026-06-16 — Implement normalization functions and build_lineage_edges
+
+### Done
+
+- Refined `reject_invalid_records`: drops `rejection_reasons` from valid output and `is_valid` from both outputs so callers don't see internal columns.
+- Refined `deduplicate_latest`: drops the helper `rn` column from the returned DataFrame.
+- Added `TIME_FORMAT` constant (`yyyy-MM-dd'T'HH:mm:ssX`) used across all timestamp parsing.
+- Implemented `normalize_origins`: rejects invalids, trims/lowercases all string fields, adds `entity_id`, parses `ingest_ts`, deduplicates by `(source_system, source_record_id)`.
+- Implemented `normalize_batch_events`: rejects invalids, normalises `event_type`, parses both timestamps, deduplicates.
+- Implemented `normalize_shipments`: rejects invalids, parses both timestamps, deduplicates.
+- Implemented `normalize_regulatory_declarations`: rejects invalids, parses timestamps, trims status/type, deduplicates by `(source_system, source_version)`.
+- Implemented `build_lineage_edges`: unions batch-event rows and shipment rows into a canonical edge schema (`source_system`, `source_record_id`, `action_time`, `parent_entity_id`, `child_entity_id`, `edge_type`, `quantity_kg`, `explanation`).
+- Updated README and docs/AI.md to reflect migration from Codex to Claude slash commands.
+
+### Changed files
+
+- `challenges/2026-05-30_traceability_lineage_pyspark_delta.py` — implemented normalization functions, `build_lineage_edges`; refined helper column cleanup in `reject_invalid_records` and `deduplicate_latest`.
+- `README.md` — replaced Codex references with Claude slash commands; added Slash Commands section.
+- `docs/AI.md` — updated path/name references from AGENTS.md/Codex to CLAUDE.md/Claude.
+
+### Verification
+
+- PASS — `uv run ruff check challenges/2026-05-30_traceability_lineage_pyspark_delta.py`
+- PASS (5/6) — `uv run pytest challenges/2026-05-30_traceability_lineage_pyspark_delta.py`
+- FAIL — `test_high_risk_origin_propagates_to_downstream_products` — `propagate_compliance_risk` not yet implemented.
+
+### Decisions / Notes
+
+- `build_lineage_edges` produces correct lineage (verified via `show()` output during test): ORIGIN → LOT → BATCH → PRODUCT → DC chain is intact.
+- `normalize_origins` has a latent bug: `entity_id` and `ingest_ts` `withColumn` results are not reassigned to `df_clean` (the `show()` test doesn't exercise those columns yet). Fix before `propagate_compliance_risk` relies on `entity_id`.
+
+### Next
+
+- [ ] Fix `normalize_origins`: reassign `df_clean = df_clean.withColumn("entity_id", ...)` and `df_clean = df_clean.withColumn("ingest_ts", ...)`.
+- [ ] Implement `propagate_compliance_risk` — graph-walk (BFS/recursive CTE or Spark iterative join) to flag all downstream nodes of a high-risk origin.
+- [ ] Run full pytest suite green after both fixes.
+
 ## 2026-06-04 — Continue PySpark deduplication implementation
 
 ### Done

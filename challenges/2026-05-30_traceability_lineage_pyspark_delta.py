@@ -88,6 +88,9 @@ from pyspark.sql import functions as F
 # GIVEN / STARTER DATA
 # =========================
 
+TIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ssX"
+
+
 RAW_ORIGIN_SCHEMA = T.StructType(
     [
         T.StructField("source_system", T.StringType(), True),
@@ -452,8 +455,8 @@ def reject_invalid_records(
         F.size(F.col("rejection_reasons")) == 0
     )
 
-    valid_records = validated_df.filter(F.col("is_valid"))
-    rejected_records = validated_df.filter(~F.col("is_valid"))
+    valid_records = validated_df.filter(F.col("is_valid")).drop("rejection_reasons").drop("is_valid")
+    rejected_records = validated_df.filter(~F.col("is_valid")).drop("is_valid")
         
     return (valid_records, rejected_records)
 
@@ -478,7 +481,7 @@ def deduplicate_latest(records: DataFrame, business_keys: list[str]) -> DataFram
                 F.col("ingest_ts").desc()
             ])
         )
-    ).filter(F.col("rn") == 1)
+    ).filter(F.col("rn") == 1).drop("rn")
     return filtered
 
 def normalize_origins(raw_origins: DataFrame) -> DataFrame:
@@ -495,7 +498,37 @@ def normalize_origins(raw_origins: DataFrame) -> DataFrame:
     - Return valid normalized rows. Rejection handling may be exposed through a
       companion function or audit output.
     """
-    raise NotImplementedError
+    required_columns = ["source_system", "source_record_id", "source_version", "ingest_ts", "origin_id"]
+
+    df, _ = reject_invalid_records(raw_origins, required_columns)
+
+    #trim and lower every field
+    df_clean: DataFrame = df
+    for column in df.columns:
+        df_clean = df_clean.withColumn(
+            column,
+            F.when(F.trim(F.col(column)) == "", None)
+            .otherwise(F.lower(F.trim(F.col(column))))
+        )
+    
+    #add entity_id
+    df_clean.withColumn(
+        "entity_id",
+        F.lit(f"ORIGIN:{F.upper(F.col("origin_id"))}")
+    )
+    
+    #parse ingest_ts to date time
+    df_clean.withColumn(
+        "ingest_ts",
+        F.to_timestamp(F.col("ingest_ts"), TIME_FORMAT)
+    )
+
+    dedup_df = deduplicate_latest(
+        df_clean, 
+        ["source_system", "source_record_id"]
+    )
+
+    return dedup_df
 
 
 def normalize_batch_events(raw_events: DataFrame) -> DataFrame:
@@ -508,7 +541,30 @@ def normalize_batch_events(raw_events: DataFrame) -> DataFrame:
     - Deduplicate source corrections.
     - Preserve out-of-order event timestamps; do not rely on input ordering.
     """
-    raise NotImplementedError
+    required_columns = [
+        "source_system",
+        "source_record_id",
+        "source_version",
+        "ingest_ts",
+        "event_type",
+        "event_ts",
+        "input_entity_id",
+        "output_entity_id"
+    ]
+    #reject records
+    df, _ = reject_invalid_records(raw_events, required_columns)
+
+    #normalize critical field
+    df_clean = (
+        df
+        .withColumn("event_type", F.lower(F.trim(F.col("event_type"))))
+        .withColumn("event_ts", F.to_timestamp(F.lower(F.trim(F.col("event_ts"))), TIME_FORMAT))
+        .withColumn("ingest_ts", F.to_timestamp(F.col("ingest_ts"), TIME_FORMAT))
+    )
+
+    dedup_df = deduplicate_latest(df_clean, ["source_system", "source_record_id"])
+
+    return dedup_df
 
 
 def normalize_shipments(raw_shipments: DataFrame) -> DataFrame:
@@ -520,7 +576,31 @@ def normalize_shipments(raw_shipments: DataFrame) -> DataFrame:
     - Preserve missing non-critical carrier values.
     - Parse timestamps.
     """
-    raise NotImplementedError
+
+    required_columns = [
+        "source_system",
+        "source_record_id",
+        "source_version",
+        "ingest_ts",
+        "shipment_id",
+        "from_entity_id",
+        "to_entity_id"
+    ]
+
+    df, _ = reject_invalid_records(raw_shipments, required_columns)
+
+    df_clean = (
+        df
+        .withColumn("ingest_ts", F.to_timestamp(F.col("ingest_ts"), TIME_FORMAT))
+        .withColumn("shipment_ts", F.to_timestamp(F.col("shipment_ts"), TIME_FORMAT))
+    )
+
+    dedup_df = deduplicate_latest(
+        df_clean,
+        ["source_system", "source_record_id"]
+    )
+
+    return dedup_df
 
 
 def normalize_regulatory_declarations(raw_declarations: DataFrame) -> DataFrame:
@@ -532,8 +612,30 @@ def normalize_regulatory_declarations(raw_declarations: DataFrame) -> DataFrame:
     - Deduplicate latest declaration source records.
     - Keep enough fields to explain who declared what and when.
     """
-    raise NotImplementedError
+    
+    required_columns = [
+        "source_system",
+        "source_record_id",
+        "source_version",
+        "ingest_ts",
+        "entity_id",
+        "declaration_type",
+        "declaration_status"
+    ]
 
+    df, _ = reject_invalid_records(raw_declarations, required_columns)
+
+    df_clean = (
+        df
+        .withColumn("ingest_ts", F.to_timestamp(F.col("ingest_ts"), TIME_FORMAT))
+        .withColumn("declaration_ts", F.to_timestamp(F.col("declaration_ts"), TIME_FORMAT))
+        .withColumn("declaration_status", F.trim(F.col("declaration_status")))
+        .withColumn("declaration_type", F.trim(F.col("declaration_type")))
+    )
+
+    dedup_df = deduplicate_latest(df_clean, ["source_system", "source_version"])
+
+    return dedup_df
 
 def build_lineage_edges(batch_events: DataFrame, shipments: DataFrame) -> DataFrame:
     """Build directed lineage edges from transformations and shipments.
@@ -545,8 +647,57 @@ def build_lineage_edges(batch_events: DataFrame, shipments: DataFrame) -> DataFr
       timestamp, quantity_kg when relevant, and an explanation field.
     - Deduplicate deterministic duplicate edges.
     """
-    raise NotImplementedError
 
+    target_columns = [
+        "source_system",
+        "source_record_id",
+        "action_time",
+        "parent_entity_id",
+        "child_entity_id", 
+        "edge_type",
+        "quantity_kg",
+        "explanation"
+    ]
+
+    batch_norm = batch_events.select(
+        F.col("source_system"),
+        F.col("source_record_id"),
+        F.col("input_entity_id").alias("parent_entity_id"),
+        F.col("output_entity_id").alias("child_entity_id"),
+        F.col("event_ts").alias("action_time"),
+        F.lit("batch").alias("edge_type"),
+        F.col("quantity_kg"),
+        F.lit(None).alias("explanation")
+    ).select(target_columns)
+
+    shipment_norm = shipments.select(
+        F.col("source_system"),
+        F.col("source_record_id"),
+        F.col("from_entity_id").alias("parent_entity_id"),
+        F.col("to_entity_id").alias("child_entity_id"),
+        F.col("shipment_ts").alias("action_time"),
+        F.lit("shipment").alias("edge_type"),
+        F.lit(None).alias("explanation"),
+        F.lit(None).alias("quantity_kg")
+    ).select(target_columns)
+
+    lineage_edges = batch_norm.unionByName(shipment_norm)
+
+    lineage_edges.show(truncate=False)
+
+    dedup = (
+        lineage_edges.withColumn(
+            "rn",
+            F.row_number().over(
+                Window.partitionBy(["source_system", "source_record_id", "edge_type"])
+                .orderBy([
+                    F.col("action_time").desc()
+                ])
+            )
+        ).filter(F.col("rn") == 1).drop("rn")
+    )
+
+    return dedup
 
 def detect_attribute_conflicts(normalized_origins: DataFrame) -> DataFrame:
     """Detect origin attribute conflicts across source systems.
