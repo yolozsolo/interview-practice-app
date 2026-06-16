@@ -41,6 +41,8 @@ Use concise imperative commit messages such as `Add delta merge challenge` or `U
 
 Keep edits small and instructional. When creating challenges, add exactly one Python file unless asked otherwise. When grading, inspect and run the file first, then give strict, practical feedback tied to interview expectations.
 
+**This is a learning project. Never implement solutions or fix bugs in challenge files.** When a problem is identified, give only a short hint pointing at the root cause and let the user solve it. Only write or fix code when the user explicitly asks (e.g., "fix it", "implement it", "go ahead").
+
 Whenever changes are made to project instructions, workflow, file structure, challenge conventions, or active learning context, update `docs/AI.md` in the same change set so it remains a useful handoff document.
 
 ## Custom Slash Commands

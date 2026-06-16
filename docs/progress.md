@@ -2,6 +2,36 @@
 
 Newest entries go first. This file exists so the next work session can start quickly without reconstructing context from memory or chat history.
 
+## 2026-06-16 — Fix deduplicate_latest bug; update CLAUDE.md learning rules
+
+### Done
+
+- Fixed `deduplicate_latest`: it was calling `.withColumn("_row_hash", ...)` on `records` but then building the window on the old `df` reference (missing the hash column), and also referenced `"row_hash"` instead of `"_row_hash"` in the `orderBy`. Both fixed → `test_deduplication_keeps_latest_deterministic_source_record` now passes.
+- Added "no AI implementation" rule to `CLAUDE.md` so the tutor role is enforced across all sessions.
+
+### Changed files
+
+- `challenges/2026-05-30_traceability_lineage_pyspark_delta.py` — fixed `deduplicate_latest` variable reference and column name typo.
+- `CLAUDE.md` — added explicit "never implement; only hint" instruction under Agent-Specific Instructions.
+
+### Verification
+
+- PASS — `uv run ruff check challenges/2026-05-30_traceability_lineage_pyspark_delta.py CLAUDE.md`
+- PASS (6/15) — `uv run pytest challenges/2026-05-30_traceability_lineage_pyspark_delta.py -q`
+- FAIL (9/15) — remaining stubs: `propagate_compliance_risk`, `detect_conflicting_attributes`, audit summary, traceability report, all Delta Lake tests.
+
+### Decisions / Notes
+
+- The 6 passing tests cover: validation rejection, deduplication, out-of-order event handling, lineage edge construction, and two more normalization-related tests.
+- All 9 failing tests raise `NotImplementedError` — no regressions introduced.
+
+### Next
+
+- [ ] Implement `propagate_compliance_risk`: iterative BFS join over `lineage_edges` starting from high-risk origins; flag all downstream `entity_id`s.
+- [ ] Implement `detect_conflicting_attributes`: self-join origins on `entity_id`, compare `country`/`geo_risk_level`/`certification_status` across source systems.
+- [ ] Implement audit summary and traceability report functions.
+- [ ] Delta Lake tests (optional stretch): write/read bronze+silver, idempotent merge, lineage append.
+
 ## 2026-06-16 — Implement normalization functions and build_lineage_edges
 
 ### Done

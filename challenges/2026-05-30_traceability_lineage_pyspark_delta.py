@@ -472,16 +472,26 @@ def deduplicate_latest(records: DataFrame, business_keys: list[str]) -> DataFram
     """
     df = records
 
+    #tie-breaker
+    all_cols = records.columns
+
+    df = records.withColumn(
+        "_row_hash",
+        F.sha2(F.concat_ws("|", *[F.col(c).cast("string")
+        for c in all_cols]), 256)
+    )
+
     filtered = df.withColumn(
         "rn",
         F.row_number().over(
             Window.partitionBy(business_keys)
             .orderBy([
                 F.col("source_version").desc(),
-                F.col("ingest_ts").desc()
+                F.col("ingest_ts").desc(),
+                F.col("_row_hash").asc()
             ])
         )
-    ).filter(F.col("rn") == 1).drop("rn")
+    ).filter(F.col("rn") == 1).drop("rn").drop("_row_hash")
     return filtered
 
 def normalize_origins(raw_origins: DataFrame) -> DataFrame:
@@ -512,13 +522,13 @@ def normalize_origins(raw_origins: DataFrame) -> DataFrame:
         )
     
     #add entity_id
-    df_clean.withColumn(
+    df_clean = df_clean.withColumn(
         "entity_id",
         F.lit(f"ORIGIN:{F.upper(F.col("origin_id"))}")
     )
     
     #parse ingest_ts to date time
-    df_clean.withColumn(
+    df_clean = df_clean.withColumn(
         "ingest_ts",
         F.to_timestamp(F.col("ingest_ts"), TIME_FORMAT)
     )
