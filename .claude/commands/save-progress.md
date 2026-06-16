@@ -33,7 +33,7 @@ Maintain this file:
 docs/progress.md
 ```
 
-Do not create separate dated progress files unless the user explicitly asks. Keep the newest entry at the top so the file is useful immediately after opening it.
+**Overwrite the file completely each time** — do not append or keep historical entries. The file should always reflect only the current state of the active task. Git history is the record of past sessions; `docs/progress.md` is only "where am I right now".
 
 ## Standard workflow
 
@@ -69,29 +69,25 @@ uv run mypy .
 
 If checks are slow, unavailable, or not relevant, record that clearly in `docs/progress.md` instead of pretending they passed.
 
-4. Update `docs/progress.md` before committing.
+4. Overwrite `docs/progress.md` completely before committing.
 
-Use this entry format:
+Use this format (replace the entire file):
 
 ```markdown
-## YYYY-MM-DD — <short task title>
+# Progress
+
+## Current task — YYYY-MM-DD — <short task title>
+
+**File:** `challenges/<file>.py`
 
 ### Done
 
 - ...
 
-### Changed files
-
-- `path/to/file.py` — short explanation
-
 ### Verification
 
 - PASS/FAIL/NOT RUN — `command`
 - Notes about failures or skipped checks
-
-### Decisions / Notes
-
-- ...
 
 ### Next
 
@@ -100,7 +96,7 @@ Use this entry format:
 - [ ] Optional cleanup/follow-up
 ```
 
-Keep entries practical. Write for "tomorrow me", not for a formal report.
+Keep it practical. Write for "tomorrow me", not a formal report.
 
 5. Review what will be committed.
 
